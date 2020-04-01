@@ -2,78 +2,21 @@
 //**********************************
 //*****  INCLUDES  *****************
 //**********************************
-#include <Key.h>
+#include <Key.h> // do I need this ?
 #include <Keypad.h>
 //#include <Servo.h>  // or Adafruit PCA9685 - https://github.com/adafruit/Adafruit-PWM-Servo-Driver-Library
 #include <FlexiTimer2.h>
 #include <LiquidCrystal_PCF8574.h> // or use #include <LiquidCrystal_I2C.h>
 #include <Wire.h> // This library allows you to communicate with I2C / TWI devices
 
-String softwareVersion = "2.3";
+String softwareVersion = "2.4";
 #define numButtons 2
 
-//**************************************
-//**************************************
-//******** KEYPAD Handling  ************
-//**************************************
-//**************************************
-/*  This set of procedures handle the keypad
- *  interface.  The get_key may be used in other 
- *  procedures
+
+/* Programmer Note: 
+ * for the compiler to work, order of the following rountines matter  
  */
 
- //*** lcd Variables ***
-typedef struct
-{
-  String Row0;
-  String Row1;
-  String Row2;
-  String Row3;
-} lcdDef;
-lcdDef lcd = {"row0","row1","row2","row3"};
-
-int keyCount = 0;
-String sKey = "";
-//Setup Keypad in Uno
-const byte ROWS = 4; // Four rows
-const byte COLS = 4; // Four columns
-char keys[ROWS][COLS] = 
-{
-  {'1','2','3','A'},
-  {'4','5','6','B'},
-  {'7','8','9','C'},
-  {'*','0','#','D'}
-};
-byte rowPins[ROWS] = { 9,8,7,6 };// Connect keypad ROW0, ROW1, ROW2 and ROW3 to these Arduino pins
-byte colPins[COLS] = { 5,4,3,2 };// Connect keypad COL0, COL1 and COL2 to t
-Keypad kpd = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
-
-void testKeyPad()
-// Keypad testing for setup 
-{
-  //         "                    "  
-  lcd.Row0 = "   KeyPay Test      " ;
-  lcd.Row1 = "  Press Each Key    ";
-  lcd.Row2 = " ** to Cancel Test  ";
-  lcd.Row3 = "                    ";
-  lcdUpdateByRow( true,true,true,true);
-
-  bool testRunning = true;
-  do
-  {
-    char key = kpd.getKey();   
-    if (key != NO_KEY)
-    {
-    sKey = sKey + key ;
-    lcdUpdateByPosition(1,3,sKey);
-    keyCount += 1;
-    if ((keyCount == 2) && (sKey == "**")) {testRunning = false;}
-    if (keyCount == 16) { testRunning = false; delay (2000);}
-    }  
-  } while (testRunning);
-  
-  lcdClearRow(99);
-}  
 
 
 //**************************************
@@ -85,6 +28,15 @@ void testKeyPad()
 //***  LCD Library  ***
 LiquidCrystal_PCF8574 lcdControl(0x27);  // set the LCD address to 0x3F for a 20 chars and 4 line display
 
+ //*** lcd Variables ***
+typedef struct
+{
+  String Row0;
+  String Row1;
+  String Row2;
+  String Row3;
+} lcdDef;
+lcdDef lcd = {"row0","row1","row2","row3"};
 
 
 
@@ -125,6 +77,7 @@ void lcdUpdateByRow(bool r0, bool r1, bool r2, bool r3)
  *   LCD setup and start=up tests
  */
 
+
 void setupLCD()
 /* THis handles all the LCD Setup stuff
  * 
@@ -156,7 +109,7 @@ void testLCDDisplay()
   bool testRunning = true;
   do
   {
-    char key = kpd.getKey();   
+    char key = GetKeyStroke();
     if (key != NO_KEY)
     { 
       
@@ -184,6 +137,68 @@ void testLCDDisplay()
   lcdClearRow(99);
 }
 
+//**************************************
+//**************************************
+//******** KEYPAD Handling  ************
+//**************************************
+//**************************************
+/*  This set of procedures handle the keypad
+ *  interface.  The get_key may be used in other 
+ *  procedures
+ */
+
+
+int keyCount = 0;
+String sKey = "";
+//Setup Keypad in Uno
+const byte ROWS = 4; // Four rows
+const byte COLS = 4; // Four columns
+char keys[ROWS][COLS] = 
+{
+  {'1','2','3','A'},
+  {'4','5','6','B'},
+  {'7','8','9','C'},
+  {'*','0','#','D'}
+};
+byte rowPins[ROWS] = { 9,8,7,6 };// Connect keypad ROW0, ROW1, ROW2 and ROW3 to these Arduino pins
+byte colPins[COLS] = { 5,4,3,2 };// Connect keypad COL0, COL1 and COL2 to t
+Keypad kpd = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
+
+char GetKeyStroke()
+/*  Add this procedure to keep the physical interface to keypad in this section
+ *   of code
+ */
+{
+  char key = kpd.getKey();
+  return key ;
+}
+void testKeyPad()
+// Keypad testing for setup 
+{
+  //         "                    "  
+  lcd.Row0 = "   KeyPay Test      " ;
+  lcd.Row1 = "  Press Each Key    ";
+  lcd.Row2 = " ** to Cancel Test  ";
+  lcd.Row3 = "                    ";
+  lcdUpdateByRow( true,true,true,true);
+
+  bool testRunning = true;
+  do
+  {
+    char key = kpd.getKey();   
+    if (key != NO_KEY)
+    {
+    sKey = sKey + key ;
+    lcdUpdateByPosition(1,3,sKey);
+    keyCount += 1;
+    if ((keyCount == 2) && (sKey == "**")) {testRunning = false;}
+    if (keyCount == 16) { testRunning = false; delay (2000);}
+    }  
+  } while (testRunning);
+  
+  lcdClearRow(99);
+}  
+
 
 //**************************************
 //**************************************
@@ -207,7 +222,7 @@ buttonDef button[numButtons] =
   {0,0,0,10},
   {0,0,0,11},
 };
-int debounceCountMax= 5;
+int debounceCountMax= 2;
 
 int CheckButtonEvent ()
 /*  This FUNCTION returns the hit button with a RISING Edge
@@ -226,6 +241,10 @@ int CheckButtonEvent ()
         button[i].State = thsButton ; button[i].DebounceCount = 0;
         if(thsButton == btn_ON) {eventNum = i; break;};    
       }
+    }
+    else
+    {  // if the same state, reset debouce counter
+      button[i].DebounceCount = 0;
     }
   }
   return eventNum;
@@ -286,9 +305,24 @@ void ledHandling( int ledNum, int ledState)
   }
 }  
 
+void BlinkAllLeds (int blinkTime)
+/*  This just blinks the LEDS at a 2 Hz rate for 
+ *   the blinkTime in SECONDS)
+ */
+{
+    unsigned long sysTimer = millis() + (blinkTime * 1000);
 
+    if(millis() <= sysTimer)
+    {
+      for (int i = 0; i< numButtons ; i++) {ledHandling(i,led_ON);}
+      delay(500);
+      for (int i = 0; i< numButtons ; i++) {ledHandling(i,led_OFF); }
+    }
+}
+    
+   
 void setupLED()
-/* THis procedure is called from Setup
+/* This procedure is called from Setup
  *  and handles linking LED to UNO
  */
 {
@@ -360,6 +394,7 @@ void setup()
 void loop() 
 {
   delay (1000);
+    
   unsigned long sysTime = (millis()/1000);
   char lcdTime[40];
   sprintf(lcdTime ,"%05d",sysTime);
@@ -381,6 +416,10 @@ void loop()
     lcd.Row2 += " : ";
   }
   lcdUpdateByRow( true,true,true,false); 
+
+
+  char key = GetKeyStroke();
+  if (key == 'A') BlinkAllLeds(2);
 
   int btnEvent = CheckButtonEvent();
   if (btnEvent != 99) {ledHandling(btnEvent,led_Toogle);}  
