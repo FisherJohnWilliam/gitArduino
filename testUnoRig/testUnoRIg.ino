@@ -9,15 +9,24 @@
 #include <LiquidCrystal_PCF8574.h> // or use #include <LiquidCrystal_I2C.h>
 #include <Wire.h> // This library allows you to communicate with I2C / TWI devices
 
-String softwareVersion = "2.4";
+String softwareVersion = "2.5";
 #define numButtons 2
+
 
 
 /* Programmer Note: 
  * for the compiler to work, order of the following rountines matter  
+ * #define must be before the use, compiler does not look below code.
  */
 
+//  led States
+#define led_OFF 1
+#define led_ON 0
+#define led_Toggle 2
 
+// button State
+#define btn_OFF 1  // Buttos are Failsafe
+#define btn_ON 0
 
 //**************************************
 //**************************************
@@ -206,8 +215,7 @@ void testKeyPad()
 //**************************************
 //**************************************
 
-#define btn_OFF 1  // Buttos are Failsafe
-#define btn_ON 0
+
 
 typedef struct
 {
@@ -263,6 +271,57 @@ void setupButton()
 }
 
 
+void testButtons()
+{ // Button testing for setup 
+  //         "                    "  
+  lcd.Row0 = "   Button Test      " ;
+  lcd.Row1 = "  Press A to Start  ";
+  lcd.Row2 = "   Button Tests     ";
+  lcd.Row3 = "Any Oth Key Cancels ";
+  lcdUpdateByRow( true,true,true,true);
+
+  //Wait for a keystroke (only one)
+  char key = NO_KEY ;
+  do {key = GetKeyStroke();} while (key == NO_KEY);
+
+  // Run Test or not  
+  if (key = 'A') 
+  { 
+    int cycleTime = 1000;
+    String testStatus = "BTN: ";
+    for (int i=0;1<numButtons;i++){testStatus += "R ";}
+    unsigned long sysTimer = millis();
+    bool testRunning = true ;
+    lcd.Row0 = "   Button Test      " ;
+    lcd.Row1 = "  Test Button: " ;
+    lcd.Row2 = " B to fail and Skip " ;
+    lcd.Row3 = testStatus;
+    lcdUpdateByRow( true,true,true,true);
+
+    for (int i=0;i<numButtons;i++)
+    {
+        lcd.Row1 += i;
+        lcd.Row3.setCharAt((6+i*2),'T');
+        lcdUpdateByRow( true,true,true,true);
+        sysTimer = millis() + cycleTime;
+      do
+      {
+        int eventBtn = CheckButtonEvent() ;
+        if ( eventBtn = i) {testRunning = false; lcd.Row3.setCharAt((6+i*2),'P'); ledHandling(i,led_OFF);}
+        key = GetKeyStroke;
+        if (key == 'B'){testRunning = false; lcd.Row3.setCharAt((6+i*2),'F');ledHandling(i,led_OFF);}
+        if (millis() >= sysTimer)
+          {
+            ledHandling(i,led_Toggle);
+            sysTimer = millis() + cycleTime;
+          }
+       } while (testRunning == true);
+    } // next i
+  } // Run test 'A'
+}
+
+
+ 
 //**************************************
 //**************************************
 //********   LED HANDLING    ***********
@@ -273,9 +332,7 @@ void setupButton()
  * Light the LED of any Gate that is OPEN State
  */
 
-#define led_OFF 1
-#define led_ON 0
-#define led_Toggle 2
+
 
 typedef struct
 {
@@ -321,8 +378,7 @@ void BlinkAllLeds (int blinkTime)
 }
     
 void testLED()
-{
-// LED testing for setup 
+{ // LED testing for setup 
   //         "                    "  
   lcd.Row0 = "     LED Test       " ;
   lcd.Row1 = "  Press A to Start  ";
@@ -419,6 +475,8 @@ void setup()
   testLCDDisplay();
   testKeyPad();
   testLED();
+  testButtons();
+  
 
  // Prep Dispaly
   lcd.Row0 = "Run Time ";
@@ -456,8 +514,8 @@ void loop()
 
 
   char key = GetKeyStroke();
-  if (key == 'A') BlinkAllLeds(2);
+  if (key == 'A') BlinkAllLeds(2);  // blink led for 2 seconds
 
-  int btnEvent = CheckButtonEvent();
+  int btnEvent = CheckButtonEvent();  // toggle LED
   if (btnEvent != 99) {ledHandling(btnEvent,led_Toggle); btnEvent = 99; }  
 }
