@@ -2,10 +2,10 @@
 //**********************************
 //*****  INCLUDES  *****************
 //**********************************
-#include <Key.h>
+#include "C:\Users\J2BFisher\Documents\gitArduino\libraries\Keypad-3.1.1\src\Key.h"
 #include <Keypad.h>
 //#include <Servo.h>  // or Adafruit PCA9685 - https://github.com/adafruit/Adafruit-PWM-Servo-Driver-Library
-//#include <FlexiTimer2.h>
+#include <FlexiTimer2.h>
 #include <LiquidCrystal_PCF8574.h> // or use #include <LiquidCrystal_I2C.h>
 #include <Wire.h> // This library allows you to communicate with I2C / TWI devices
 
