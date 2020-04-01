@@ -273,9 +273,9 @@ void setupButton()
  * Light the LED of any Gate that is OPEN State
  */
 
-#define led_OFF 0
-#define led_ON 1
-#define led_Toogle 2
+#define led_OFF 1
+#define led_ON 0
+#define led_Toggle 2
 
 typedef struct
 {
@@ -296,10 +296,10 @@ void ledHandling( int ledNum, int ledState)
   {
     case led_OFF: {digitalWrite (led[ledNum].Output,HIGH); led[ledNum].State = led_OFF ;break;}
     case led_ON: {digitalWrite (led[ledNum].Output,LOW);; led[ledNum].State = led_ON ; break;}
-    case led_Toogle:
+    case led_Toggle:
     {  // Toogle
-      if (led[ledNum].State == 0) {digitalWrite (led[ledNum].Output,HIGH); led[ledNum].State = led_ON ;}
-      if (led[ledNum].State == 1) {digitalWrite (led[ledNum].Output,LOW); led[ledNum].State = led_OFF ;}
+      if (led[ledNum].State == led_OFF) {digitalWrite (led[ledNum].Output,HIGH); led[ledNum].State = led_ON ;}
+      else                              {digitalWrite (led[ledNum].Output,LOW); led[ledNum].State = led_OFF ;}
       break;
     }
   }
@@ -320,7 +320,45 @@ void BlinkAllLeds (int blinkTime)
     }
 }
     
-   
+void testLED()
+{
+// LED testing for setup 
+  //         "                    "  
+  lcd.Row0 = "     LED Test       " ;
+  lcd.Row1 = "  Press A to Start  ";
+  lcd.Row2 = " blinking each LED  ";
+  lcd.Row3 = "Any Oth Key Cancels ";
+  lcdUpdateByRow( true,true,true,true);
+  delay(1000);
+  int cycleTime = 1000;
+  char key = NO_KEY  ;
+    //Wait for a keystroke (only one)
+    do {key = GetKeyStroke();} while (key == NO_KEY);
+    
+    if (key = 'A') // Run Test
+      {
+        bool testRunning = true;
+        unsigned long sysTimer = millis() + cycleTime;
+        do // keep looping until next keystroke
+        {
+         char key = GetKeyStroke();   
+         if (key != NO_KEY) {testRunning = false;}
+         if(millis() >= sysTimer) 
+         {
+           for(int i = 0 ;i< numButtons; i++)
+           {
+            ledHandling(i,led_Toggle);
+            delay(100);
+           }
+           sysTimer = millis() + cycleTime;
+         }
+        } while (testRunning);
+      } 
+      // turn off the leds
+      for(int i = 0; i< numButtons; i++) {ledHandling(i,led_OFF);}  
+      lcdClearRow(99);
+}  
+               
 void setupLED()
 /* This procedure is called from Setup
  *  and handles linking LED to UNO
@@ -331,8 +369,6 @@ void setupLED()
     pinMode(led[i].Output,OUTPUT);
     for (int j = 0; j<3; j++)
     { // blick LED to verify functional
-      ledHandling(i,led_ON);
-      delay(500);
       ledHandling(i,led_OFF);  
     }
   }
@@ -343,7 +379,7 @@ void setupLED()
 
 //**************************************
 //**************************************
-//********   SETUP TESTS    ************
+//********   OTHER STUFF    ************
 //**************************************
 //************************************** 
 /* These procedures are misc setup calls
@@ -358,16 +394,16 @@ void setupSerialPort()
   Serial.print (softwareVersion);
 }
 
- 
+ void TimerInterrupt()
+{
+  delay (100);
+}
  /****************************************************************************************************************
  * 
  *                  Setup and Event Handler (Loop) 
  *   
  ***************************************************************************************************************/
-void TimerInterrupt()
-{
-  delay (100);
-}
+
 
 
 void setup() 
@@ -382,6 +418,7 @@ void setup()
   // Run System Test
   testLCDDisplay();
   testKeyPad();
+  testLED();
 
  // Prep Dispaly
   lcd.Row0 = "Run Time ";
@@ -393,7 +430,7 @@ void setup()
  
 void loop() 
 {
-  delay (1000);
+  delay (100);
     
   unsigned long sysTime = (millis()/1000);
   char lcdTime[40];
@@ -422,6 +459,5 @@ void loop()
   if (key == 'A') BlinkAllLeds(2);
 
   int btnEvent = CheckButtonEvent();
-  if (btnEvent != 99) {ledHandling(btnEvent,led_Toogle);}  
+  if (btnEvent != 99) {ledHandling(btnEvent,led_Toggle); btnEvent = 99; }  
 }
-
