@@ -20,8 +20,8 @@ String softwareVersion = "2.5";
  */
 
 //  led States
-#define led_OFF 1
-#define led_ON 0
+#define led_OFF 0
+#define led_ON 1
 #define led_Toggle 2
 
 // button State
@@ -243,16 +243,8 @@ int CheckButtonEvent ()
     int thsButton = digitalRead( button[i].Input);
     if (thsButton != button[i].State)
     {
-      button[i].DebounceCount += 1;
-      if ( button[i].DebounceCount >= debounceCountMax )
-      {
-        button[i].State = thsButton ; button[i].DebounceCount = 0;
-        if(thsButton == btn_ON) {eventNum = i; break;};    
-      }
-    }
-    else
-    {  // if the same state, reset debouce counter
-      button[i].DebounceCount = 0;
+        button[i].State = thsButton;
+        if(thsButton == btn_ON) {eventNum = i;}
     }
   }
   return eventNum;
@@ -279,45 +271,81 @@ void testButtons()
   lcd.Row2 = "   Button Tests     ";
   lcd.Row3 = "Any Oth Key Cancels ";
   lcdUpdateByRow( true,true,true,true);
+  
+  int  stringPosition = 0;
+  bool testRunning = true;
+  bool buttonRunning = true;
+  char key = NO_KEY;
 
-  //Wait for a keystroke (only one)
-  char key = NO_KEY ;
-  do {key = GetKeyStroke();} while (key == NO_KEY);
-
-  // Run Test or not  
-  if (key = 'A') 
-  { 
-    int cycleTime = 1000;
-    String testStatus = "BTN: ";
-    for (int i=0;1<numButtons;i++){testStatus += "R ";}
-    unsigned long sysTimer = millis();
-    bool testRunning = true ;
-    lcd.Row0 = "   Button Test      " ;
-    lcd.Row1 = "  Test Button: " ;
-    lcd.Row2 = " B to fail and Skip " ;
-    lcd.Row3 = testStatus;
-    lcdUpdateByRow( true,true,true,true);
-
-    for (int i=0;i<numButtons;i++)
-    {
-        lcd.Row1 += i;
-        lcd.Row3.setCharAt((6+i*2),'T');
+  do   //Wait for a keystroke (only one)
+  {
+    key = GetKeyStroke();
+    
+    // Run Test or not  
+    if (key != NO_KEY)
+      if (key == 'A') 
+      { 
+        
+        String testStatus = "BTN: ";
+        for (int i=0;i<numButtons;i++)
+        {testStatus += "R ";
+        Serial.println (testStatus);
+        }
+        
+        int cycleTime = 1000;
+        unsigned long sysTimer = millis();
+        bool testRunning = true ;
+        
+        lcd.Row0 = "   Button Test      " ;
+        lcd.Row1 = "Test Button: " ;
+        lcd.Row2 = testStatus;
+        lcd.Row3 = " B to fail and Skip " ;
         lcdUpdateByRow( true,true,true,true);
-        sysTimer = millis() + cycleTime;
-      do
-      {
-        int eventBtn = CheckButtonEvent() ;
-        if ( eventBtn = i) {testRunning = false; lcd.Row3.setCharAt((6+i*2),'P'); ledHandling(i,led_OFF);}
-        key = GetKeyStroke;
-        if (key == 'B'){testRunning = false; lcd.Row3.setCharAt((6+i*2),'F');ledHandling(i,led_OFF);}
-        if (millis() >= sysTimer)
-          {
-            ledHandling(i,led_Toggle);
-            sysTimer = millis() + cycleTime;
-          }
-       } while (testRunning == true);
-    } // next i
-  } // Run test 'A'
+    
+        for (int i=0;i<numButtons;i++)
+        {
+          stringPosition = 5+i*2;  // first char in string is position 0
+          lcd.Row1 += i;
+          lcd.Row2.setCharAt((stringPosition),'T'); 
+          lcdUpdateByRow( true,true,true,true);
+          
+          sysTimer = millis();
+          buttonRunning = true;
+          do  //blink LED until Button press, B on keypad
+          { 
+            int eventBtn = CheckButtonEvent() ;
+            if ( eventBtn == i) 
+              {
+                buttonRunning = false; 
+                lcd.Row2.setCharAt((stringPosition),'P'); 
+                lcdUpdateByRow(false,false,true,false);
+                ledHandling(i,led_OFF);
+              }
+            
+            key = GetKeyStroke();
+            if (key == 'B')
+              {
+                buttonRunning = false; 
+                lcd.Row2.setCharAt((stringPosition),'F');
+                lcdUpdateByRow(false,false,true,false);
+                ledHandling(i,led_OFF);}
+            
+            if (millis() >= sysTimer)
+              {
+                ledHandling(i,led_Toggle);
+                sysTimer = millis() + cycleTime;
+              }
+          } while (buttonRunning == true);
+     
+        } // next button
+          lcd.Row3 = "Press * to Continue " ;  
+          lcdUpdateByRow( false,false,false,true);
+     } else {
+        testRunning = false;
+      }
+  } while (testRunning == true); // User selects run test
+  
+  lcdClearRow(3);
 }
 
 
@@ -355,8 +383,8 @@ void ledHandling( int ledNum, int ledState)
     case led_ON: {digitalWrite (led[ledNum].Output,LOW);; led[ledNum].State = led_ON ; break;}
     case led_Toggle:
     {  // Toogle
-      if (led[ledNum].State == led_OFF) {digitalWrite (led[ledNum].Output,HIGH); led[ledNum].State = led_ON ;}
-      else                              {digitalWrite (led[ledNum].Output,LOW); led[ledNum].State = led_OFF ;}
+      if (led[ledNum].State == led_OFF) {digitalWrite (led[ledNum].Output,LOW); led[ledNum].State = led_ON ;}
+      else                              {digitalWrite (led[ledNum].Output,HIGH); led[ledNum].State = led_OFF ;}
       break;
     }
   }
@@ -377,44 +405,6 @@ void BlinkAllLeds (int blinkTime)
     }
 }
     
-void testLED()
-{ // LED testing for setup 
-  //         "                    "  
-  lcd.Row0 = "     LED Test       " ;
-  lcd.Row1 = "  Press A to Start  ";
-  lcd.Row2 = " blinking each LED  ";
-  lcd.Row3 = "Any Oth Key Cancels ";
-  lcdUpdateByRow( true,true,true,true);
-  delay(1000);
-  int cycleTime = 1000;
-  char key = NO_KEY  ;
-    //Wait for a keystroke (only one)
-    do {key = GetKeyStroke();} while (key == NO_KEY);
-    
-    if (key = 'A') // Run Test
-      {
-        bool testRunning = true;
-        unsigned long sysTimer = millis() + cycleTime;
-        do // keep looping until next keystroke
-        {
-         char key = GetKeyStroke();   
-         if (key != NO_KEY) {testRunning = false;}
-         if(millis() >= sysTimer) 
-         {
-           for(int i = 0 ;i< numButtons; i++)
-           {
-            ledHandling(i,led_Toggle);
-            delay(100);
-           }
-           sysTimer = millis() + cycleTime;
-         }
-        } while (testRunning);
-      } 
-      // turn off the leds
-      for(int i = 0; i< numButtons; i++) {ledHandling(i,led_OFF);}  
-      lcdClearRow(99);
-}  
-               
 void setupLED()
 /* This procedure is called from Setup
  *  and handles linking LED to UNO
@@ -431,7 +421,63 @@ void setupLED()
 }
 
 
+void testLED()
+{ // LED testing for setup 
+  //         "                    "  
+  lcd.Row0 = "     LED Test       " ;
+  lcd.Row1 = "  Press A to Start  ";
+  lcd.Row2 = "Any Oth Key Cancels ";
+  lcd.Row3 = "                    ";
+  lcdUpdateByRow( true,true,true,true);
+  delay(1000);
+  int cycleTime = 1000;
+  
+  bool testRunning = true;
+  char key = NO_KEY;
 
+  do   //Wait for a keystroke (only one)
+  {
+    key = GetKeyStroke();
+    
+    // Run Test or not  
+    if (key != NO_KEY)
+    {
+      if (key == 'A') 
+      {
+        lcd.Row1 = "   Press Any Key    ";
+        lcd.Row2 = "  blinking each LED ";
+        lcdUpdateByRow( false,true,true,false);
+        
+        unsigned long sysTimer = millis() + cycleTime;
+        bool ledRunning = true;
+        do // keep looping until next keystroke
+        {
+         key = GetKeyStroke();   
+         if (key != NO_KEY) {ledRunning = false;}
+         
+         if(millis() >= sysTimer) 
+         {
+           for(int i = 0 ;i< numButtons; i++)
+           {
+            ledHandling(i,led_Toggle);
+            delay(100);
+           }
+           sysTimer = millis() + cycleTime;
+         }
+        } while (ledRunning == true);
+        
+        // turn off the leds
+        lcd.Row1 = "   Test Complete    ";
+        lcd.Row2 = "   Turn LED OFF     ";
+        lcd.Row3 = "Press * to Continue " ; 
+        lcdUpdateByRow( false,true,true,true);
+        for(int i = 0; i< numButtons; i++) {ledHandling(i,led_OFF);}  
+      }  else   { // Any key but A skips tet
+        testRunning = false ;
+      }
+   }  
+  } while (testRunning == true);
+}               
 
 //**************************************
 //**************************************
