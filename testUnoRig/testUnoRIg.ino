@@ -1,61 +1,74 @@
 
 
-
 //**********************************
 //*****  INCLUDES  *****************
 //**********************************
 #include <Key.h> // do I need this ?
 #include <Keypad.h>
 //#include <Servo.h>  // or Adafruit PCA9685 - https://github.com/adafruit/Adafruit-PWM-Servo-Driver-Library
-#include <FlexiTimer2.h>
 #include <LiquidCrystal_PCF8574.h> // or use #include <LiquidCrystal_I2C.h>
 #include <Wire.h> // This library allows you to communicate with I2C / TWI devices
 #include <EEPROM.h>
 
-String softwareVersion = "2.7";
-#define numButtons 3
 
+//**************************************
+// SOFTWARE VERSION
+// Must be an INTERGER (easier to store in EEPROM)
+//**************************************
+int softwareVersion = 28 ;
+int EEsoftwareVersion ; 
+bool newSoftwareVersion = false;
 
-
+//**************************************
+//**************************************
+//********   #define        ************
+//**************************************
+//**************************************
 /* Programmer Note: 
  * for the compiler to work, order of the following rountines matter  
  * #define must be before the use, compiler does not look below code.
- */
+*/
 
-//  led States
-#define led_OFF 0
-#define led_ON 1
-#define led_Toggle 2
+//*** led States
+  #define led_OFF 0
+  #define led_ON 1
+  #define led_Toggle 2
 
-// button State
-#define btn_OFF 1  // Buttoms are Failsafe
-#define btn_ON 0
+//*** button State
+  #define numButtons 3
+  #define btn_OFF 1  // Buttons are Failsafe
+  #define btn_ON 0
 
+//*** event handling
+  #define eventClear 99  //clear Event  (0 is a event for gates)
+  #define eventInterrupt 1  //General Event
 
-// event
-#define eventClear 99  //clear Event  (0 is a event for gates)
-#define eventInterrupt 1  //General Event
-
-// User Configurable Variables
-
+//*** User Configurable Variables
   int intervalService = 1000;  //Timer Service Interval in milliseconds
   int intervalDisplay = 2000;  //Display Update Interval in milliseconds
   int debounceCountMax = 3; //button debounce
   int blowerShutDownMax = 30; //seconds
   int blowerDelayMax = 10; //seconds
 
-#define clearEEPROM 0
-#define readEEPROM  1
-#define writeEEPROM  2
+//*** EEPROM
+  #define clearEEPROM 0
+  #define readEEPROM  1
+  #define writeEEPROM  2
+  #define updateEEPROM 3
+  #define svEEPROM 4
+
 
 //**************************************
 //**************************************
 //********  LCD Handling    ************
 //**************************************
 //**************************************
+/*  The following routines PHYSICALY control
+ *  the LCD Display device (lcdControl)
+ */
 
 //***  LCD Library  ***
-LiquidCrystal_PCF8574 lcdControl(0x27);  // set the LCD address to 0x3F for a 20 chars and 4 line display
+LiquidCrystal_PCF8574 lcdControl(0x27);
 
  //*** lcd Variables ***
 typedef struct
@@ -67,13 +80,7 @@ typedef struct
 } lcdDef;
 lcdDef lcd = {"row0","row1","row2","row3"};
 
-
-
-//***  LCD Control Procedures ***
-/*  The following routines PHYSICALY control
- *  the LCD Display device (lcdControl)
- */
- 
+//***  lcdClearRow
 void lcdClearRow( int rowNum)
 // Clear the request Row
 // Zero clears all rows
@@ -82,6 +89,7 @@ void lcdClearRow( int rowNum)
   else { lcdControl.setCursor(0,rowNum); lcdControl.print("                    ");}
 }
 
+//***  lcdUpdateByPosition
 void lcdUpdateByPosition( int ColPos, int RowPos, String Text)
 // Update the lcd by setting the cursor at ColPos and RowPos
 // and printing the Text
@@ -90,6 +98,7 @@ void lcdUpdateByPosition( int ColPos, int RowPos, String Text)
   lcdControl.print(Text);
 } //***********************
 
+//***  lcdUpdateByRow
 void lcdUpdateByRow(bool r0, bool r1, bool r2, bool r3)
 // Update the ROW of the lcd Display
 // using the lcd.Rowx variables
@@ -101,15 +110,9 @@ void lcdUpdateByRow(bool r0, bool r1, bool r2, bool r3)
   if (r3 == true) {lcdClearRow(3); lcdControl.setCursor(0,3); lcdControl.print(lcd.Row3);}
  } //***********************
 
-//***  LCD Control Initilization ***
-/*  The following routines handles
- *   LCD setup and start=up tests
- */
-
-
+//*** setupLCD
 void setupLCD()
-/* THis handles all the LCD Setup stuff
- * 
+/* THis handles all the LCD Setup stuff 
  */
 {
 
@@ -119,6 +122,7 @@ void setupLCD()
   lcdControl.noAutoscroll();
 }
 
+//*** testLCDDisplay
 void testLCDDisplay()
 { // This is the Test routine for setup()
   //         "                    "  
@@ -159,6 +163,7 @@ void testLCDDisplay()
   lcdClearRow(99);
 }
 
+
 //**************************************
 //**************************************
 //******** KEYPAD Handling  ************
@@ -186,6 +191,7 @@ byte rowPins[ROWS] = { 9,8,7,6 };// Connect keypad ROW0, ROW1, ROW2 and ROW3 to 
 byte colPins[COLS] = { 5,4,3,2 };// Connect keypad COL0, COL1 and COL2 to t
 Keypad kpd = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
 
+//*** GetKeyStroke
 char GetKeyStroke()
 /*  Add this procedure to keep the physical interface to keypad in this section
  *   of code
@@ -245,7 +251,7 @@ buttonDef button[numButtons] =
   {0,0,0,12},
 };
 
-
+//***  CheckButtonEvent
 int CheckButtonEvent ()
 /*  This FUNCTION returns the hit button with a RISING Edge
  *  the failing edge is recorded, but does not generate a Event
@@ -273,7 +279,7 @@ int CheckButtonEvent ()
   return eventNum;
 }
 
-
+//*** setupButton
 void setupButton()
 /* THis procedure is called from Setup
  *  and handles linking LED to UNO
@@ -285,7 +291,7 @@ void setupButton()
   }
 }
 
-
+//***  testButtons
 void testButtons()
 { // Button testing for setup 
   //         "                    "  
@@ -383,17 +389,14 @@ void testButtons()
  * Light the LED of any Gate that is OPEN State
  */
 
-
-
 typedef struct
 {
   int State ;
   int Output;
 } ledDef;
-
 ledDef led[numButtons] = {{0,A2}, {0,A1},{0,A0}};
 
-
+//*** ledHandling
 void ledHandling( int ledNum, int ledState)
 /* Toggles the request LED ON or OFF
  *  This procedure is the PHYSICAL interface to the LEDS
@@ -413,6 +416,7 @@ void ledHandling( int ledNum, int ledState)
   }
 }  
 
+//*** BlikkAllLeds
 void BlinkAllLeds (int blinkTime)
 /*  This just blinks the LEDS at a 2 Hz rate for 
  *   the blinkTime in SECONDS)
@@ -422,7 +426,8 @@ void BlinkAllLeds (int blinkTime)
  delay(500);
  for (int i = 0; i< numButtons ; i++) {ledHandling(i,led_OFF); }
 }
-    
+
+//*** setupLED    
 void setupLED()
 /* This procedure is called from Setup
  *  and handles linking LED to UNO
@@ -439,6 +444,7 @@ void setupLED()
 }
 
 
+//*** testLED
 void testLED()
 { // LED testing for setup 
   //         "                    "  
@@ -497,6 +503,93 @@ void testLED()
   } while (testRunning == true);
 }               
 
+//**************************************
+//**************************************
+//*****  EEPROM Handling    ************
+//**************************************
+//************************************** 
+/* This handles the PHYSICAL handling of EEPROM
+ *  
+ */
+
+//*** handleEEPROM
+void handleEEPROM(int action)
+/*  this procedure PHYSICALLY handles writing and reading the EEPROM
+ *  EEPROM Address are hard coded here
+ */
+{
+  switch (action)
+  { 
+    case readEEPROM:
+    {
+      EEPROM.get (0, softwareVersion);
+      EEPROM.get (2 , intervalService);
+      EEPROM.get (4 , intervalDisplay) ;
+      EEPROM.get (6 , debounceCountMax) ;
+      EEPROM.get (8 , blowerShutDownMax) ;
+      EEPROM.get (10 , blowerDelayMax) ;  
+      break;
+    }
+
+    case writeEEPROM:
+    { 
+      EEPROM.put (0, softwareVersion);
+      EEPROM.put (2 , intervalService);
+      EEPROM.put (4 , intervalDisplay) ;
+      EEPROM.put (6 , debounceCountMax) ;
+      EEPROM.put (8 , blowerShutDownMax) ;
+      EEPROM.put (10 , blowerDelayMax) ;  
+      break;
+    }
+
+    case clearEEPROM:
+    {
+      for (int i = 0 ; i < EEPROM.length() ; i++) 
+      {
+        if(EEPROM.read(i) != 0) EEPROM.write(i, 0);
+      }  
+      break;
+    }
+
+    case updateEEPROM:
+    { // check if same before writing
+      int eCheck = 0;
+      EEPROM.get (0, eCheck); if(eCheck != softwareVersion) EEPROM.put (0, softwareVersion);
+      EEPROM.get (2, eCheck); if(eCheck != intervalService) EEPROM.put (0, intervalService);
+      EEPROM.get (4, eCheck); if(eCheck != intervalDisplay) EEPROM.put (0, intervalDisplay);
+      EEPROM.get (6, eCheck); if(eCheck != debounceCountMax) EEPROM.put (0, debounceCountMax);
+      EEPROM.get (8, eCheck); if(eCheck != blowerShutDownMax) EEPROM.put (0, blowerShutDownMax);
+      EEPROM.get (10, eCheck); if(eCheck != blowerDelayMax) EEPROM.put (0, blowerDelayMax);
+    }
+
+    case svEEPROM:
+    {
+     EEPROM.get (0, EEsoftwareVersion);
+    }
+  }
+}
+//*** testEEPROM
+void testEEPROM()
+{
+  lcd.Row0 = "*EEPROM Initization*";
+  lcd.Row1 = " A to READ  ";
+  lcd.Row2 = " B to Write ";
+  lcd.Row3 = " C to CLEAR ";
+  lcdUpdateByRow( true,true,true,true);   
+
+  bool startUpTest = true;
+  do
+  {
+    char key = GetKeyStroke();
+    if (key != NO_KEY) 
+    {
+      if (key == 'A') handleEEPROM(readEEPROM);
+      if (key == 'B') handleEEPROM(writeEEPROM);
+      if (key == 'C') handleEEPROM(clearEEPROM);  
+      startUpTest=false;
+    }
+  } while (startUpTest == true);
+}
 
 
 //**************************************
@@ -537,6 +630,7 @@ typedef struct
 int configLoopSize = 5;
 configDef configLoop[5] ;
 
+//*** CheckTimer ***
 int CheckTimer()
 /*  This procedure is a seudo
  *   interrupt timer
@@ -556,6 +650,7 @@ int CheckTimer()
   }
 }
 
+//*** updateDisplay ***
 void updateDisplay()
 { 
   char lcdTime[40];
@@ -578,13 +673,66 @@ void updateDisplay()
   lcd.Row3 = "                   ";
   lcdUpdateByRow( true,true,true,true); 
 
-
   event.svcDisplay = eventClear;
 }
 
+//*** maintenanceMode
+void maintenanceMode()
+/*  THis procedure makes the test procedures
+ *   avaliable
+ */
+{
+  int loopCount = 0;
+  bool loopDisplay = true;
+  int displayLoopSize = 5;
+  String displayLoop[10] =
+  {
+    "EEPROM",
+    "LCD",
+    "KeyPad",
+    "LED",
+    "Buttons",
+  };
+  //         "01234567890123456789"
+  lcd.Row0 = "   Maintenace Mode  ";
+  lcd.Row2 = " Press * to Scroll  ";
+  lcd.Row3 = "  Press # to Run    ";
+  lcd.Row3 = displayLoop[0]; 
+  lcdUpdateByRow( true,true,true,true);
 
+  do
+  {
+    char key = GetKeyStroke();
+    if (key != NO_KEY)
+    { 
+      if (key == '*') 
+      {
+       loopCount += 1;
+       if (loopCount == displayLoopSize) loopCount = 0;
+       lcd.Row3 =displayLoop[loopCount];
+       lcdUpdateByRow( false,false,false,true);
+      }
+      else if (key == '#') 
+      {
+        switch(loopCount)
+        {
+          case 0: testEEPROM();
+          case 1: testLCDDisplay();
+          case 2: testKeyPad();
+          case 3: testLED();
+          case 4: testButtons();
+        }
+        loopDisplay == false;  
+      }
+      else
+      { // any other key
+        loopDisplay == false;
+      }
+    }
+  } while (loopDisplay == true);
+}
 
-
+//*** changeConfiguration
 void changeConfiguration()
 // Scrool thru variables to change
 /*
@@ -646,7 +794,7 @@ void changeConfiguration()
           case 4: blowerDelayMax    = lcd.Row3.toInt(); configLoop[loopCount].Value = lcd.Row3   ;break;
         }
         
-        handleEEPROM(writeEEPROM);
+        handleEEPROM(updateEEPROM);
         lcd.Row3 ="";
         lcdClearRow(3);
       }
@@ -658,50 +806,15 @@ void changeConfiguration()
 }
 
 
+
 //**************************************
 //**************************************
-//********   OTHER STUFF    ************
+//*****  OTHER STUFF        ************
 //**************************************
 //************************************** 
 /* These procedures are misc setup calls
  *  
  */
-
-void handleEEPROM(int action)
-{
-  switch (action)
-  { 
-    case readEEPROM:
-    {
-      EEPROM.get (0 , intervalService);
-      EEPROM.get (2 , intervalDisplay) ;
-      EEPROM.get (4 , debounceCountMax) ;
-      EEPROM.get (6 , blowerShutDownMax) ;
-      EEPROM.get (8 , blowerDelayMax) ;  
-      break;
-    }
-
-    case writeEEPROM:
-    {
-      EEPROM.put (0 , intervalService);
-      EEPROM.put (2 , intervalDisplay) ;
-      EEPROM.put (4 , debounceCountMax) ;
-      EEPROM.put (6 , blowerShutDownMax) ;
-      EEPROM.put (8 , blowerDelayMax) ;
-      break;
-    }
-
-    case clearEEPROM:
-    {
-      for (int i = 0 ; i < EEPROM.length() ; i++) 
-      {
-        if(EEPROM.read(i) != 0) EEPROM.write(i, 0);
-      }  
-      break;
-    }
-  }
-}
-
 
 //*** Setup Serial Port
 void setupSerialPort()
@@ -711,30 +824,18 @@ void setupSerialPort()
   Serial.print (softwareVersion);
 }
 
-
- /****************************************************************************************************************
- * 
- *                  Setup and Event Handler (Loop) 
- *   
- ***************************************************************************************************************/
-
-
-
-void setup() 
+//***  Setup SoftwareVersion
+void setupINIT()
 {
-  setupSerialPort(); 
-  setupLCD();
-  setupLED();
-  setupButton();
-  handleEEPROM(readEEPROM);
-  
-  
-  
-  lcd.Row0 = "*System Initization*";
-  lcd.Row1 = " Dust Collection SW ";
-  lcd.Row2 = " Version " + softwareVersion;
-  lcd.Row3 = "Startup Test Press A";
-  lcdUpdateByRow( true,true,true,true); 
+  // New SW Check
+  handleEEPROM(svEEPROM);
+  lcd.Row0 = "*Dust Collection SW*";
+  lcd.Row1 = " Version " + String(softwareVersion);
+  if (EEsoftwareVersion != softwareVersion) {lcd.Row2 = "** NEW VERSION DETECTED ** ";} else  {lcd.Row2 = "                    ";}
+  lcd.Row3 = "Startup Test Press A"; 
+  lcdUpdateByRow( true,true,true,true);
+
+  // Wait for User Input
   bool startUpTest = true;
   do
   {
@@ -744,38 +845,65 @@ void setup()
       if (key == 'A')
       {
         // Run System Test
+        testEEPROM();
         testLCDDisplay();
         testKeyPad();
         testLED();
         testButtons(); 
       }
+      else
+      {
+        handleEEPROM(readEEPROM);
+      }
       startUpTest=false;
     }
   } while (startUpTest == true);
+
   
   // Start Interrupt
   sys.itrpServiceTimer = millis(); // update timers on first pass
   sys.itrpServiceDisplay = millis(); // update display on first pass
+}
 
+
+
+
+ /****************************************************************************************************************
+ * 
+ *                  Setup and Event Handler (Loop) 
+ *   
+ ***************************************************************************************************************/
+
+void setup() 
+{
+  setupSerialPort(); 
+  setupLCD();
+  setupLED();
+  setupButton();
+  setupINIT();  
+  
+  updateDisplay();
 }
  
 void loop() 
 {
-  // Interrupt Timer 
+  // check for Interrupt Timer 
   CheckTimer();
   if (event.svcDisplay != eventClear) {updateDisplay(); }
 
-  // Keypad Stroke
+  // check for Keypad Stroke
   char key = GetKeyStroke();
   switch (key) 
   {
       case 'A': BlinkAllLeds(2); break; // blink led
-      case 'B': changeConfiguration(); break; //
-      case 'C': handleEEPROM(clearEEPROM) ; handleEEPROM(writeEEPROM); break;
+      case 'B': changeConfiguration(); break;
+      case 'C': maintenanceMode(); break;
   }
 
-  // Button Press
+  // check for Button Press
   int btnEvent = CheckButtonEvent();  // toggle LED
   if (btnEvent != 99) {ledHandling(btnEvent,led_Toggle); btnEvent = 99; }  
 
+ //blower Timer Checks
+  //future
 }
