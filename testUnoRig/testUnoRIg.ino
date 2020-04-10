@@ -1,5 +1,11 @@
 
-
+//*** UNO Board ***
+/* Details:
+ * Memory: Flash 32K, SRAM 2K  EEPROM 1K
+ * Timer1 is used for Servo
+ * 
+ */
+ 
 //**********************************
 //*****  INCLUDES  *****************
 //**********************************
@@ -9,15 +15,14 @@
 #include <LiquidCrystal_PCF8574.h> // or use #include <LiquidCrystal_I2C.h>
 #include <Wire.h> // This library allows you to communicate with I2C / TWI devices
 #include <EEPROM.h>
-
+#include <FlexiTimer2.h>
 
 //**************************************
 // SOFTWARE VERSION
 // Must be an INTERGER (easier to store in EEPROM)
 //**************************************
-int softwareVersion = 28 ;
-int EEsoftwareVersion ; 
-bool newSoftwareVersion = false;
+int softwareVersion = 29 ;
+
 
 //**************************************
 //**************************************
@@ -27,6 +32,9 @@ bool newSoftwareVersion = false;
 /* Programmer Note: 
  * for the compiler to work, order of the following rountines matter  
  * #define must be before the use, compiler does not look below code.
+ * 
+ * Defined constants in arduino don’t take up any program memory space 
+ * on the chip. The compiler will replace references to these constants with the defined value at compile time.
 */
 
 //*** led States
@@ -40,22 +48,29 @@ bool newSoftwareVersion = false;
   #define btn_ON 0
 
 //*** event handling
-  #define eventClear 99  //clear Event  (0 is a event for gates)
-  #define eventInterrupt 1  //General Event
-
-//*** User Configurable Variables
-  int intervalService = 1000;  //Timer Service Interval in milliseconds
-  int intervalDisplay = 2000;  //Display Update Interval in milliseconds
-  int debounceCountMax = 3; //button debounce
-  int blowerShutDownMax = 30; //seconds
-  int blowerDelayMax = 10; //seconds
+  #define eventClear 99  //clear Event  (0 is valild state ??)
+  #define eventBlower  1
+  #define eventGate  2
+  #define eventService 3
+  #define eventKeyPad 4
+  #define eventDisplay 5
+  #define eventAlarm 6
 
 //*** EEPROM
   #define clearEEPROM 0
   #define readEEPROM  1
   #define writeEEPROM  2
   #define updateEEPROM 3
-  #define svEEPROM 4
+
+
+//*** User Configurable Variables
+  byte intervalService = 10;  //Timer Service Interval in 1/100 second
+  byte displayCycleCountMax = 2;  //INTERVAL of intervalService
+  byte debounceCountMax = 3; //button debounce
+  byte blowerShutDownMax = 30; //seconds
+  byte blowerDelayMax = 10; //seconds
+
+
 
 
 //**************************************
@@ -70,18 +85,9 @@ bool newSoftwareVersion = false;
 //***  LCD Library  ***
 LiquidCrystal_PCF8574 lcdControl(0x27);
 
- //*** lcd Variables ***
-typedef struct
-{
-  String Row0;
-  String Row1;
-  String Row2;
-  String Row3;
-} lcdDef;
-lcdDef lcd = {"row0","row1","row2","row3"};
 
 //***  lcdClearRow
-void lcdClearRow( int rowNum)
+void lcdClearRow( byte rowNum)
 // Clear the request Row
 // Zero clears all rows
 {
@@ -90,7 +96,7 @@ void lcdClearRow( int rowNum)
 }
 
 //***  lcdUpdateByPosition
-void lcdUpdateByPosition( int ColPos, int RowPos, String Text)
+void lcdUpdateByPosition( byte ColPos, byte RowPos, String Text)
 // Update the lcd by setting the cursor at ColPos and RowPos
 // and printing the Text
 {
@@ -99,15 +105,15 @@ void lcdUpdateByPosition( int ColPos, int RowPos, String Text)
 } //***********************
 
 //***  lcdUpdateByRow
-void lcdUpdateByRow(bool r0, bool r1, bool r2, bool r3)
+void lcdUpdateByRow(String r0, String r1, String r2, String r3)
 // Update the ROW of the lcd Display
-// using the lcd.Rowx variables
+// if String is null"" skip
 {
 
-  if (r0 == true) {lcdClearRow(0); lcdControl.setCursor(0,0); lcdControl.print(lcd.Row0);}
-  if (r1 == true) {lcdClearRow(1); lcdControl.setCursor(0,1); lcdControl.print(lcd.Row1);}
-  if (r2 == true) {lcdClearRow(2); lcdControl.setCursor(0,2); lcdControl.print(lcd.Row2);}
-  if (r3 == true) {lcdClearRow(3); lcdControl.setCursor(0,3); lcdControl.print(lcd.Row3);}
+  if (r0 != "") {lcdClearRow(0); lcdControl.setCursor(0,0); lcdControl.print(r0); Serial.println(r0);}
+  if (r1 != "") {lcdClearRow(1); lcdControl.setCursor(0,1); lcdControl.print(r1); Serial.println(r1);}
+  if (r2 != "") {lcdClearRow(2); lcdControl.setCursor(0,2); lcdControl.print(r2); Serial.println(r2);}
+  if (r3 != "") {lcdClearRow(3); lcdControl.setCursor(0,3); lcdControl.print(r3); Serial.println(r3);}
  } //***********************
 
 //*** setupLCD
@@ -126,12 +132,14 @@ void setupLCD()
 void testLCDDisplay()
 { // This is the Test routine for setup()
   //         "                    "  
-  lcd.Row0 = "     LCD Test       " ;
-  lcd.Row1 = "   Press # Key to   ";
-  lcd.Row2 = " Cycle thru LCD     ";
-  lcd.Row3 = "Any oth Key to SKIP ";
-  lcdUpdateByRow( true,true,true,true);
-   
+  lcdUpdateByRow
+  (
+  //"                    "
+    "     LCD Test       ",
+    "   Press # Key to   ",
+    " Cycle thru LCD     ",
+    "Any oth Key to SKIP "
+  );
   bool testRunning = true;
   do
   {
@@ -143,12 +151,12 @@ void testLCDDisplay()
       {
          String myMessage = String("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*():;{}<>?/");
          String myChar;
-         int i = 0;
+         byte i = 0;
           // Scroll message accross screen
           lcdClearRow(99);
-          for (int row=0; row<4; row++)
+          for (byte row=0; row<4; row++)
             {
-              for (int col = 0 ;col <= 19; col++)
+              for (byte col = 0 ;col <= 19; col++)
               {    
                 myChar  = myMessage.charAt(i);
                 lcdUpdateByPosition(col,row, myChar);
@@ -175,11 +183,10 @@ void testLCDDisplay()
  */
 
 
-int keyCount = 0;
-String sKey = "";
 //Setup Keypad in Uno
-const byte ROWS = 4; // Four rows
-const byte COLS = 4; // Four columns
+
+#define ROWS 4 // Four rows
+#define COLS 4 // Four columns
 char keys[ROWS][COLS] = 
 {
   {'1','2','3','A'},
@@ -191,6 +198,7 @@ byte rowPins[ROWS] = { 9,8,7,6 };// Connect keypad ROW0, ROW1, ROW2 and ROW3 to 
 byte colPins[COLS] = { 5,4,3,2 };// Connect keypad COL0, COL1 and COL2 to t
 Keypad kpd = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
 
+
 //*** GetKeyStroke
 char GetKeyStroke()
 /*  Add this procedure to keep the physical interface to keypad in this section
@@ -200,17 +208,25 @@ char GetKeyStroke()
   char key = kpd.getKey();
   return key ;
 }
+
+
 void testKeyPad()
 // Keypad testing for setup 
 {
-  //         "                    "  
-  lcd.Row0 = "   KeyPay Test      " ;
-  lcd.Row1 = "  Press Each Key    ";
-  lcd.Row2 = " ** to Cancel Test  ";
-  lcd.Row3 = "                    ";
-  lcdUpdateByRow( true,true,true,true);
+  
+  lcdUpdateByRow
+  (
+  //"                    "  
+    "   KeyPay Test      ",
+    "  Press Each Key    ",
+    " ** to Cancel Test  ",
+    "                    "
+  );
 
   bool testRunning = true;
+  String sKey = "";
+  byte keyCount = 0;
+
   do
   {
     char key = kpd.getKey();   
@@ -234,22 +250,16 @@ void testKeyPad()
 //**************************************
 //**************************************
 
-
-
 typedef struct
 {
-  int State;
-  int Prev_State;
-  int DebounceCount;
-  int Input;
+  byte State;
+  byte Prev_State;
+  byte DebounceCount;
+  byte Input;
 } buttonDef;
 
 buttonDef button[numButtons] =
-{
-  {0,0,0,10},
-  {0,0,0,11},
-  {0,0,0,12},
-};
+{ {0,0,0,10}, {0,0,0,11}, {0,0,0,12}};
 
 //***  CheckButtonEvent
 int CheckButtonEvent ()
@@ -258,9 +268,9 @@ int CheckButtonEvent ()
  */
 {
   int eventNum = 99;
-  for(int i = 0; i < numButtons; i++)
+  for(byte i = 0; i < numButtons; i++)
   {
-    int thsButton = digitalRead( button[i].Input);
+    byte thsButton = digitalRead( button[i].Input);
     if (thsButton != button[i].State)
     {
       if (button[i].DebounceCount >= debounceCountMax)
@@ -285,7 +295,7 @@ void setupButton()
  *  and handles linking LED to UNO
  */
 {
-  for(int i=0; i<numButtons; i++)
+  for(byte i=0; i<numButtons; i++)
   {
     pinMode(button[i].Input, INPUT_PULLUP);  
   }
@@ -294,14 +304,17 @@ void setupButton()
 //***  testButtons
 void testButtons()
 { // Button testing for setup 
-  //         "                    "  
-  lcd.Row0 = "   Button Test      " ;
-  lcd.Row1 = "  Press A to Start  ";
-  lcd.Row2 = "   Button Tests     ";
-  lcd.Row3 = "Any Oth Key Cancels ";
-  lcdUpdateByRow( true,true,true,true);
   
-  int  stringPosition = 0;
+  lcdUpdateByRow
+  (
+  //"                    "    
+    "   Button Test      ",
+    "  Press A to Start  ",
+    "   Button Tests     ",
+    "Any Oth Key Cancels "
+  );
+  
+  byte  stringPosition = 0;
   bool testRunning = true;
   bool buttonRunning = true;
   char key = NO_KEY;
@@ -315,28 +328,32 @@ void testButtons()
       if (key == 'A') 
       { 
         
-        String testStatus = "BTN: ";
-        for (int i=0;i<numButtons;i++)
-        {testStatus += "R ";
-        Serial.println (testStatus);
-        }
-        
+        String testStatus = "BTN: "; for (byte i=0;i<numButtons;i++) {testStatus += "R ";}
+        String testButton = "Test Button: ";
         int cycleTime = 1000;
         unsigned long sysTimer = millis();
         bool testRunning = true ;
         
-        lcd.Row0 = "   Button Test      " ;
-        lcd.Row1 = "Test Button: " ;
-        lcd.Row2 = testStatus;
-        lcd.Row3 = " B to fail and Skip " ;
-        lcdUpdateByRow( true,true,true,true);
+        lcdUpdateByRow
+        (
+        //"                    "    
+          "   Button Test      " ,
+          testButton,
+          testStatus,
+          " B to fail and Skip " 
+        );
     
-        for (int i=0;i<numButtons;i++)
+        for (byte i=0;i<numButtons;i++)
         {
           stringPosition = 5+i*2;  // first char in string is position 0
-          lcd.Row1 += i;
-          lcd.Row2.setCharAt((stringPosition),'T'); 
-          lcdUpdateByRow( true,true,true,true);
+          testStatus.setCharAt((stringPosition),'T');
+          lcdUpdateByRow
+          ( 
+            "",
+            testButton += String(i),
+            testStatus, 
+            ""
+          );
           
           sysTimer = millis();
           buttonRunning = true;
@@ -346,17 +363,17 @@ void testButtons()
             if ( eventBtn == i) 
               {
                 buttonRunning = false; 
-                lcd.Row2.setCharAt((stringPosition),'P'); 
-                lcdUpdateByRow(false,false,true,false);
+                testStatus.setCharAt((stringPosition),'P');
+                lcdUpdateByRow("", testStatus, "", "");
                 ledHandling(i,led_OFF);
               }
             
             key = GetKeyStroke();
             if (key == 'B')
               {
-                buttonRunning = false; 
-                lcd.Row2.setCharAt((stringPosition),'F');
-                lcdUpdateByRow(false,false,true,false);
+                buttonRunning = false;
+                testStatus.setCharAt((stringPosition),'F'); 
+                lcdUpdateByRow("",testStatus , "", "");
                 ledHandling(i,led_OFF);}
             
             if (millis() >= sysTimer)
@@ -367,8 +384,7 @@ void testButtons()
           } while (buttonRunning == true);
      
         } // next button
-          lcd.Row3 = "Press * to Continue " ;  
-          lcdUpdateByRow( false,false,false,true);
+          lcdUpdateByRow( "","","","Press * to Continue ");
      } else {
         testRunning = false;
       }
@@ -390,14 +406,12 @@ void testButtons()
  */
 
 typedef struct
-{
-  int State ;
-  int Output;
-} ledDef;
+{ byte State ; byte Output; } ledDef;
 ledDef led[numButtons] = {{0,A2}, {0,A1},{0,A0}};
 
+
 //*** ledHandling
-void ledHandling( int ledNum, int ledState)
+void ledHandling( byte ledNum, byte ledState)
 /* Toggles the request LED ON or OFF
  *  This procedure is the PHYSICAL interface to the LEDS
  *  ledON: 0 = OFF, 1 = ON, 2 = SWITCH
@@ -406,25 +420,30 @@ void ledHandling( int ledNum, int ledState)
   switch (ledState)
   {
     case led_OFF: {digitalWrite (led[ledNum].Output,HIGH); led[ledNum].State = led_OFF ;break;}
-    case led_ON: {digitalWrite (led[ledNum].Output,LOW);; led[ledNum].State = led_ON ; break;}
+    case led_ON: {digitalWrite  (led[ledNum].Output,LOW) ; led[ledNum].State = led_ON ; break;}
     case led_Toggle:
     {  // Toogle
-      if (led[ledNum].State == led_OFF) {digitalWrite (led[ledNum].Output,LOW); led[ledNum].State = led_ON ;}
-      else                              {digitalWrite (led[ledNum].Output,HIGH); led[ledNum].State = led_OFF ;}
+      if (led[ledNum].State == led_OFF) {digitalWrite (led[ledNum].Output,LOW);  led[ledNum].State = led_ON ;}
+      else                             {digitalWrite (led[ledNum].Output,HIGH); led[ledNum].State = led_OFF ;}
       break;
     }
   }
 }  
 
 //*** BlikkAllLeds
-void BlinkAllLeds (int blinkTime)
+void BlinkAllLeds (byte blinkTime)
 /*  This just blinks the LEDS at a 2 Hz rate for 
- *   the blinkTime in SECONDS)
+ *   the blinkTime in loops)
+ *   REMEMBER - Nothing else happens while linking LEDS
  */
 {
- for (int i = 0; i< numButtons ; i++) {ledHandling(i,led_ON);}
- delay(500);
- for (int i = 0; i< numButtons ; i++) {ledHandling(i,led_OFF); }
+ for (byte j=0;j<=blinkTime;j++)
+ {
+   for (byte i = 0; i< numButtons ; i++) {ledHandling(i,led_ON);}
+   delay(500);
+   for (byte i = 0; i< numButtons ; i++) {ledHandling(i,led_OFF); }
+   delay(500);
+ }
 }
 
 //*** setupLED    
@@ -433,27 +452,25 @@ void setupLED()
  *  and handles linking LED to UNO
  */
 {
-  for (int i = 0; i< numButtons ; i++)
-  {
-    pinMode(led[i].Output,OUTPUT);
-    for (int j = 0; j<3; j++)
-    { // blick LED to verify functional
-      ledHandling(i,led_OFF);  
+    for (byte j = 0; j<numButtons; j++)
+    { 
+      pinMode(led[j].Output,OUTPUT);
+      ledHandling(j,led_OFF);  
     }
-  }
 }
 
 
 //*** testLED
 void testLED()
 { // LED testing for setup 
-  //         "                    "  
-  lcd.Row0 = "     LED Test       " ;
-  lcd.Row1 = "  Press A to Start  ";
-  lcd.Row2 = "Any Oth Key Cancels ";
-  lcd.Row3 = "                    ";
-  lcdUpdateByRow( true,true,true,true);
-  delay(1000);
+  lcdUpdateByRow
+  (
+  //"                    "  
+    "     LED Test       ",
+    "  Press A to Start  ",
+    "Any Oth Key Cancels ",
+    "                    "
+  );
   int cycleTime = 1000;
   
   bool testRunning = true;
@@ -468,9 +485,14 @@ void testLED()
     {
       if (key == 'A') 
       {
-        lcd.Row1 = "   Press Any Key    ";
-        lcd.Row2 = "  blinking each LED ";
-        lcdUpdateByRow( false,true,true,false);
+        lcdUpdateByRow
+        (
+        //"                    "  
+        "",
+        "   Press Any Key      ",
+        "  blinking each LED   ",
+        ""
+        );
         
         unsigned long sysTimer = millis() + cycleTime;
         bool ledRunning = true;
@@ -491,10 +513,14 @@ void testLED()
         } while (ledRunning == true);
         
         // turn off the leds
-        lcd.Row1 = "   Test Complete    ";
-        lcd.Row2 = "   Turn LED OFF     ";
-        lcd.Row3 = "Press * to Continue " ; 
-        lcdUpdateByRow( false,true,true,true);
+        lcdUpdateByRow
+        (
+        //"                    "  
+          "",
+          "   Test Complete    ",
+          "   Turn LED OFF     ",
+          "Press * to Continue "  
+        );
         for(int i = 0; i< numButtons; i++) {ledHandling(i,led_OFF);}  
       }  else   { // Any key but A skips tet
         testRunning = false ;
@@ -524,7 +550,7 @@ void handleEEPROM(int action)
     {
       EEPROM.get (0, softwareVersion);
       EEPROM.get (2 , intervalService);
-      EEPROM.get (4 , intervalDisplay) ;
+      EEPROM.get (4 , displayCycleCountMax) ;
       EEPROM.get (6 , debounceCountMax) ;
       EEPROM.get (8 , blowerShutDownMax) ;
       EEPROM.get (10 , blowerDelayMax) ;  
@@ -535,7 +561,7 @@ void handleEEPROM(int action)
     { 
       EEPROM.put (0, softwareVersion);
       EEPROM.put (2 , intervalService);
-      EEPROM.put (4 , intervalDisplay) ;
+      EEPROM.put (4 , displayCycleCountMax) ;
       EEPROM.put (6 , debounceCountMax) ;
       EEPROM.put (8 , blowerShutDownMax) ;
       EEPROM.put (10 , blowerDelayMax) ;  
@@ -556,26 +582,39 @@ void handleEEPROM(int action)
       int eCheck = 0;
       EEPROM.get (0, eCheck); if(eCheck != softwareVersion) EEPROM.put (0, softwareVersion);
       EEPROM.get (2, eCheck); if(eCheck != intervalService) EEPROM.put (0, intervalService);
-      EEPROM.get (4, eCheck); if(eCheck != intervalDisplay) EEPROM.put (0, intervalDisplay);
+      EEPROM.get (4, eCheck); if(eCheck != displayCycleCountMax) EEPROM.put (0, displayCycleCountMax);
       EEPROM.get (6, eCheck); if(eCheck != debounceCountMax) EEPROM.put (0, debounceCountMax);
       EEPROM.get (8, eCheck); if(eCheck != blowerShutDownMax) EEPROM.put (0, blowerShutDownMax);
       EEPROM.get (10, eCheck); if(eCheck != blowerDelayMax) EEPROM.put (0, blowerDelayMax);
     }
-
-    case svEEPROM:
-    {
-     EEPROM.get (0, EEsoftwareVersion);
-    }
   }
 }
+
+//*** softwareVerEEPROM
+bool softwareVerEEPROM()
+/* read addretss 0/1 for SW version
+ *  compare to #define softwareVersion
+ *  and true true if same
+ */
+{
+  int temp = 0;
+  EEPROM.get (0, temp); 
+  Serial.print ("Ver:");Serial.println(softwareVersion);
+  Serial.print ("EEp:");Serial.println(temp);
+  if(temp == softwareVersion) {return true;} else {return false;}
+}
+
 //*** testEEPROM
 void testEEPROM()
 {
-  lcd.Row0 = "*EEPROM Initization*";
-  lcd.Row1 = " A to READ  ";
-  lcd.Row2 = " B to Write ";
-  lcd.Row3 = " C to CLEAR ";
-  lcdUpdateByRow( true,true,true,true);   
+  lcdUpdateByRow
+  (
+  //"                    "  
+    "*EEPROM Initization*",
+    " A to READ  ",
+    " B to Write ",
+    " C to CLEAR "
+  );   
 
   bool startUpTest = true;
   do
@@ -592,6 +631,8 @@ void testEEPROM()
 }
 
 
+
+
 //**************************************
 //**************************************
 //******  Event Handling    ************
@@ -604,88 +645,50 @@ void testEEPROM()
 
 typedef struct
 {
-  int svcBlower;
-  int svcGate;
-  int svcTimer;
-  int svcDisplay;
-  int svcAlarm;
+  byte State;
+  byte subCode;
+  int Time; // seconds
+  byte displayCycleCount;
 } eventDef;
-eventDef event = {eventClear,eventClear,eventClear,eventClear,eventClear};
+eventDef event = {eventClear,0,0,0};
 
-typedef struct
-{
-  unsigned long itrpServiceTimer; // ms
-  unsigned long itrpServiceDisplay; // ms
-  unsigned long Time; // seconds
-  unsigned long RunTime; // seconds
-} timerDef;
-timerDef sys = {0,0,0,0};
 
-typedef struct
-{
-  String Label;
-  String Value;
-  String dataType;
-} configDef;
-int configLoopSize = 5;
-configDef configLoop[5] ;
-
-//*** CheckTimer ***
-int CheckTimer()
-/*  This procedure is a seudo
- *   interrupt timer
- */
-{
-  if(millis() >=  sys.itrpServiceTimer)
-  {
-    sys.itrpServiceTimer = millis() + intervalService;
-    sys.Time  += intervalService/1000;
-    sys.RunTime += intervalService/1000;
-  }
-
-  if(millis() >=  sys.itrpServiceDisplay)
-  {
-    event.svcDisplay = eventInterrupt;
-    sys.itrpServiceDisplay = millis() + intervalDisplay;
-  }
-}
 
 //*** updateDisplay ***
 void updateDisplay()
 { 
   char lcdTime[40];
-  sprintf(lcdTime ,"%05d",sys.Time);
-  lcd.Row0 = "Time " + String(lcdTime);
+  sprintf(lcdTime ,"%05d",event.Time);
+  String r0 = "Time " + String(lcdTime);
   
-  lcd.Row1 = "LED ";
-  for (int i =0; i < numButtons; i++)
+  String r1 = "LED ";
+  for (byte i =0; i < numButtons; i++)
   {
-    if(led[i].State == led_OFF) {lcd.Row1 += "0";}
-    else {lcd.Row1 += "1";} 
+    if(led[i].State == led_OFF) {r1 += "0";}
+    else {r1 += "1";} 
   }
-  lcd.Row1 += " BTN ";
-  for (int i =0; i < numButtons; i++)
+  r1 += " BTN ";
+  for (byte i =0; i < numButtons; i++)
   {
-    if(button[i].State == btn_OFF) {lcd.Row1 += "0";}
-    else {lcd.Row1 += "1";} 
+    if(button[i].State == btn_OFF) {r1 += "0";}
+    else {r1 += "1";} 
   }
-  lcd.Row2 = "                   ";
-  lcd.Row3 = "                   ";
-  lcdUpdateByRow( true,true,true,true); 
+  lcdUpdateByRow(r0,r1,"",""); 
 
-  event.svcDisplay = eventClear;
+  event.State = eventClear;
 }
 
 //*** maintenanceMode
 void maintenanceMode()
 /*  THis procedure makes the test procedures
  *   avaliable
+ *   DO WE NEED TO STOP FLEXTIMER OR VERIFY BLOWER IS OFF?
  */
 {
   int loopCount = 0;
   bool loopDisplay = true;
   int displayLoopSize = 5;
-  String displayLoop[10] =
+  String displayLoop[displayLoopSize] =
   {
     "EEPROM",
     "LCD",
@@ -693,12 +696,14 @@ void maintenanceMode()
     "LED",
     "Buttons",
   };
-  //         "01234567890123456789"
-  lcd.Row0 = "   Maintenace Mode  ";
-  lcd.Row2 = " Press * to Scroll  ";
-  lcd.Row3 = "  Press # to Run    ";
-  lcd.Row3 = displayLoop[0]; 
-  lcdUpdateByRow( true,true,true,true);
+  lcdUpdateByRow
+  (
+  //"                    "  
+    "   Maintenace Mode  ",
+    " Press * to Scroll  ",
+    "  Press # to Run    ",
+    displayLoop[0]
+  );
 
   do
   {
@@ -709,24 +714,23 @@ void maintenanceMode()
       {
        loopCount += 1;
        if (loopCount == displayLoopSize) loopCount = 0;
-       lcd.Row3 =displayLoop[loopCount];
-       lcdUpdateByRow( false,false,false,true);
+       lcdUpdateByRow("","","",String(displayLoop[loopCount]));
       }
       else if (key == '#') 
       {
         switch(loopCount)
         {
-          case 0: testEEPROM();
-          case 1: testLCDDisplay();
-          case 2: testKeyPad();
-          case 3: testLED();
-          case 4: testButtons();
+          case 0: testEEPROM();break;
+          case 1: testLCDDisplay();break;
+          case 2: testKeyPad();break;
+          case 3: testLED();break;
+          case 4: testButtons();break;
         }
-        loopDisplay == false;  
+        loopDisplay = false;  
       }
       else
       { // any other key
-        loopDisplay == false;
+        loopDisplay = false;
       }
     }
   } while (loopDisplay == true);
@@ -743,26 +747,32 @@ void changeConfiguration()
  */
 {
 
+  int configLoopSize = 5;
+
   //                    "012345678901234"
-  configLoop[0].Label = "ServiceTime ms ";
-  configLoop[1].Label = "DisplayTime ms ";
-  configLoop[2].Label = "Debounce Ctn   ";
-  configLoop[3].Label = "ShutDown sec   ";
-  configLoop[4].Label = "Delay sec      ";
-        
-  configLoop[0].Value = String(intervalService);
-  configLoop[1].Value = String(intervalDisplay);
-  configLoop[2].Value = String(debounceCountMax);
-  configLoop[3].Value = String(blowerShutDownMax);
-  configLoop[4].Value = String(blowerDelayMax);
-
+  String configLoopLabel[configLoopSize] = 
+  {
+  //"012345678901234"
+    "ServiceTime ms ",
+    "DisplayCycle Ctn ",
+    "Debounce Ctn   ",
+    "ShutDown sec   ",
+    "Delay sec      ",
+  };
+  String configLoopValue[configLoopSize] =       
+  {
+   String(intervalService),
+   String(displayCycleCountMax),
+   String(debounceCountMax),
+   String(blowerShutDownMax),
+   String(blowerDelayMax),
+  };
   // Update Display
-  lcd.Row2 = configLoop[0].Label + configLoop[0].Value;      
-  lcdUpdateByRow(false,false,true,false);
-
+  lcdUpdateByRow("","",configLoopLabel[0] + configLoopValue[0],"");
   int loopCount = 0;
   char intDisplay[40];
   bool loopConfig = true;
+  String keyStroke = "";
   do
   {
     char key = GetKeyStroke();
@@ -772,40 +782,81 @@ void changeConfiguration()
       {
        loopCount += 1;
        if (loopCount == configLoopSize) loopCount = 0;
-       lcd.Row3 ="";
-       lcdClearRow(3);
+       lcdUpdateByRow("","",configLoopLabel[loopCount] + configLoopValue[loopCount],"          ");
+       keyStroke ="";
       }
-      if (key == 'B') {loopConfig = false; }
+      else if (key == 'B') {keyStroke =""; loopConfig = false; }
 
-      if (isdigit(key)) 
+      else if (isdigit(key)) 
       { 
-       lcd.Row3 += key;
-       lcdUpdateByRow(false,false,false,true);
+       keyStroke += key;
+       lcdUpdateByRow("","","",keyStroke);
       }
-      if (key == '#')
+      else if (key == '#')
       {
         // write values
         switch (loopCount)
         {
-          case 0: intervalService   = lcd.Row3.toInt(); configLoop[loopCount].Value = lcd.Row3   ;break;
-          case 1: intervalDisplay   = lcd.Row3.toInt(); configLoop[loopCount].Value = lcd.Row3   ;break;
-          case 2: debounceCountMax  = lcd.Row3.toInt(); configLoop[loopCount].Value = lcd.Row3   ;break;
-          case 3: blowerShutDownMax = lcd.Row3.toInt(); configLoop[loopCount].Value = lcd.Row3   ;break;
-          case 4: blowerDelayMax    = lcd.Row3.toInt(); configLoop[loopCount].Value = lcd.Row3   ;break;
+          case 0: intervalService   = keyStroke.toInt(); configLoopValue[loopCount] = keyStroke   ;break;
+          case 1: displayCycleCountMax   = keyStroke.toInt(); configLoopValue[loopCount] = keyStroke   ;break;
+          case 2: debounceCountMax  = keyStroke.toInt(); configLoopValue[loopCount] = keyStroke   ;break;
+          case 3: blowerShutDownMax = keyStroke.toInt(); configLoopValue[loopCount] = keyStroke   ;break;
+          case 4: blowerDelayMax    = keyStroke.toInt(); configLoopValue[loopCount] = keyStroke   ;break;
         }
         
         handleEEPROM(updateEEPROM);
-        lcd.Row3 ="";
-        lcdClearRow(3);
+        lcdUpdateByRow("","","","EEPROM Updated");
+        keyStroke ="";
+        lcdUpdateByRow("","","","          ");
       }
-      
-      lcd.Row2 = configLoop[loopCount].Label + configLoop[loopCount].Value;      
-      lcdUpdateByRow(false,false,true,false);
+      else
+      {
+        keyStroke ="";
+        lcdUpdateByRow("","","","          ");
+      }
+      lcdUpdateByRow("","",configLoopLabel[loopCount] + configLoopValue[loopCount],"");
     }
  } while (loopConfig == true);
 }
 
+//**************************************
+//**************************************
+//*** Timer Interrupt handling *********
+//**************************************
+//**************************************
 
+
+//*** CheckTimer ***
+void CheckTimer()
+/*  This procedure is a seudo
+ *   interrupt timer
+ *   Updates event.Time in seconds for general  use
+ *   DOES NOT check for Roll over yetr
+ *   Updates Events:  
+ *      eventDisplay
+ */
+{ 
+  //Update Cycle Counters for this pass
+  event.displayCycleCount += 1;
+  Serial.print("CheckTimer ");Serial.print(millis())  ;
+
+  
+  // Update event.Time
+  event.Time  += intervalService/10;  //interval Service in 1/100 sec
+    
+
+  // *** Trigger any Events as needed ***
+
+  //Update Display
+  if(event.displayCycleCount >=  displayCycleCountMax)
+  {event.State = eventDisplay; event.displayCycleCount = 0;}
+}
+
+void setupTimerInterrupt()
+{
+  FlexiTimer2::set(1000, CheckTimer); // 1000ms period
+  FlexiTimer2::start();
+}
 
 //**************************************
 //**************************************
@@ -820,20 +871,26 @@ void changeConfiguration()
 void setupSerialPort()
 {
   Serial.begin(9600);
-  Serial.print("\nRun Setup ");
-  Serial.print (softwareVersion);
+  Serial.println(" ");
+  Serial.println("*** Run Setup ***");
 }
 
 //***  Setup SoftwareVersion
 void setupINIT()
 {
   // New SW Check
-  handleEEPROM(svEEPROM);
-  lcd.Row0 = "*Dust Collection SW*";
-  lcd.Row1 = " Version " + String(softwareVersion);
-  if (EEsoftwareVersion != softwareVersion) {lcd.Row2 = "** NEW VERSION DETECTED ** ";} else  {lcd.Row2 = "                    ";}
-  lcd.Row3 = "Startup Test Press A"; 
-  lcdUpdateByRow( true,true,true,true);
+  bool swVer;
+  String swNote = "** NEW VERSION DETECTED ** ";
+  swVer = softwareVerEEPROM();
+  if (swVer == true) swNote = "  //               ";
+  lcdUpdateByRow
+  (
+  //"                    "  
+    "*Dust Collection SW*",
+    "**Version " + String(softwareVersion),
+    swNote,
+    "Startup Test Press A" 
+  );
 
   // Wait for User Input
   bool startUpTest = true;
@@ -858,11 +915,7 @@ void setupINIT()
       startUpTest=false;
     }
   } while (startUpTest == true);
-
-  
-  // Start Interrupt
-  sys.itrpServiceTimer = millis(); // update timers on first pass
-  sys.itrpServiceDisplay = millis(); // update display on first pass
+ 
 }
 
 
@@ -876,34 +929,42 @@ void setupINIT()
 
 void setup() 
 {
+  //config board
   setupSerialPort(); 
   setupLCD();
   setupLED();
   setupButton();
   setupINIT();  
+
+  // prep system for runtime
+  setupTimerInterrupt();
+  updateDisplay(); // only updates row 1 & 2
+  lcdClearRow(2);lcdClearRow(3);
   
-  updateDisplay();
 }
  
 void loop() 
 {
-  // check for Interrupt Timer 
-  CheckTimer();
-  if (event.svcDisplay != eventClear) {updateDisplay(); }
+  // FlexiTimer2 also sets event.State for timed events
+  
+  if (event.State == eventDisplay) {updateDisplay(); }
 
   // check for Keypad Stroke
   char key = GetKeyStroke();
-  switch (key) 
+  if(key != NO_KEY)
   {
-      case 'A': BlinkAllLeds(2); break; // blink led
-      case 'B': changeConfiguration(); break;
-      case 'C': maintenanceMode(); break;
+    switch (key) 
+    {
+        case 'A': BlinkAllLeds(2); break; // blink led
+        case 'B': changeConfiguration(); break;
+        case 'C': maintenanceMode(); break;
+    }
+    updateDisplay();
+    lcdClearRow(2);lcdClearRow(3);
   }
-
+  
   // check for Button Press
   int btnEvent = CheckButtonEvent();  // toggle LED
-  if (btnEvent != 99) {ledHandling(btnEvent,led_Toggle); btnEvent = 99; }  
+  if (btnEvent != 99) {ledHandling(btnEvent,led_Toggle); btnEvent = 99; updateDisplay();lcdClearRow(2);lcdClearRow(3);}  
 
- //blower Timer Checks
-  //future
 }
