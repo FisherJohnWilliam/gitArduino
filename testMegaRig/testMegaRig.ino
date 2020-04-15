@@ -21,7 +21,7 @@
 // SOFTWARE VERSION
 // Must be an INTERGER (easier to store in EEPROM)
 //**************************************
-int softwareVersion = 29 ;
+int softwareVersion = 31 ;  //first build of MEGA board
 
 
 //**************************************
@@ -61,9 +61,13 @@ int softwareVersion = 29 ;
   #define readEEPROM  1
   #define writeEEPROM  2
   #define updateEEPROM 3
+  #define printEEPROM 4
 
 
 //*** User Configurable Variables
+/* Need to add to serial Command and LCD Maintenance mode */
+/* to be able to edit                                     */
+
   byte intervalService = 10;  //Timer Service Interval in 1/100 second
   byte displayCycleCountMax = 2;  //INTERVAL of intervalService
   byte debounceCountMax = 3; //button debounce
@@ -586,6 +590,18 @@ void handleEEPROM(int action)
       EEPROM.get (6, eCheck); if(eCheck != debounceCountMax) EEPROM.put (0, debounceCountMax);
       EEPROM.get (8, eCheck); if(eCheck != blowerShutDownMax) EEPROM.put (0, blowerShutDownMax);
       EEPROM.get (10, eCheck); if(eCheck != blowerDelayMax) EEPROM.put (0, blowerDelayMax);
+      break;
+    }
+
+    case printEEPROM:
+    {
+      Serial.println("EEPROM Memory");
+      for (int index = 0 ; index < EEPROM.length() ; index++) 
+      {
+        Serial.print (EEPROM[ index ]); Serial.print (" ")  ;
+      }
+      Serial.println("*************");
+      break;
     }
   }
 }
@@ -819,6 +835,114 @@ void changeConfiguration()
  } while (loopConfig == true);
 }
 
+//*** serialPortCommands
+
+//**************************************
+//**************************************
+//***  Serial Port Handlng  ************
+//**************************************
+//**************************************
+/* This procedure PHYSICALLY the serial port
+ */
+
+String serialPortMessage = "";
+
+//*** readSerialPort
+/* read any characters in the serial buffer 
+ * and returns a true when a complete message is received 
+*/
+bool readSerialPort() 
+{
+  char endOfMessage = '\n';
+ // check if any char in the serial buffer
+  if (Serial.available() > 0) 
+  {
+    char serialPortChar = Serial.read();
+    if (serialPortChar == endOfMessage) {return true; }
+    else {serialPortMessage += String(serialPortChar) ; return false;}
+  } 
+  else {return false;}
+}
+
+/**** serialPortCommand
+ *  THis procedure handles the commands from the
+ *  serial port
+ * next step is error checking for properly formated message
+ * sCommand format ffff:xx.... where ffff is function.  xx... change
+ * vary based on function
+ */
+void serialPortCommands( String sCommand)
+{
+  String sFunction = sCommand.substring(0,3);
+
+  if(sFunction == "time")
+  {
+    Serial.println("time changed")
+  }
+  else if (sFunction == "date")
+  {
+    Serial.println("date changed")
+  }
+  else if (sFunction == "PROM")
+  { // PROM:xxxxx where xxxxx is command
+    String sProm = sCommand.substring(5,sCommand.length());
+    if       (sProm == "read") {handleEEPROM(readEEPROM);}
+    else if  (sProm == "save") {handleEEPROM(writeEEPROM);}
+    else if  (sProm == "clear") {handleEEPROM(clearEEPROM);}
+    else if  (sProm == "print") {handleEEPROM(printEEPROM);}
+    else {Serial.println("Invaild Command");}
+  }
+  else if (sFunction == "vars")
+  {
+    int indexLoc = 0;
+    for(int i = 5; i <= sCommand.length(); i++)
+    {
+      char oneChar = sCommand.charAt(i);
+      if (oneChar == ":") indexLoc = i;
+    }
+
+    if (indexLoc !=0)
+    {
+      String sVars = sCommand.substring(5,indexLoc-1);
+      String sData = sCommand.substring(indexLoc+1, sCommand.length());
+      if       (sVars == "intervalService")      {intervalService = sData.toInt();}
+      else if  (sVars == "displayCycleCountMax") {displayCycleCountMax = sData.toInt();}
+      else if  (sVars == "debounceCountMax")     {debounceCountMax = sData.toInt();}
+      else if  (sVars == "blowerShutDownMax")    {blowerShutDownMax = sData.toInt();}
+      else if  (sVars == "blowerDelayMax")       {blowerDelayMax = sData.toInt();}
+      
+      // Show result to User
+      Serial.print("Change vars ");Serial.print (sVars);Serial.print(" = ");Serial.println(sData);
+    }
+    else // No data attached
+    {
+      String sVars = sCommand.substring(5,sCommand.length());
+      if  (sVars == "help")
+      {
+        Serial.print ("intervalService = ")     ; Serial.println( String(intervalService));
+        Serial.print ("displayCycleCountMax = "); Serial.println( String(displayCycleCountMax));
+        Serial.print ("debounceCountMax = ")    ; Serial.println( String(debounceCountMax));
+        Serial.print ("blowerShutDownMax = ")   ; Serial.println( String(blowerShutDownMax));
+        Serial.print ("blowerDelayMax = ")      ; Serial.println( String(blowerDelayMax));
+      }
+      else {Serial.println("Invaild Command");}
+    }
+  }
+}
+
+//*** setupSerialPort
+void setupSerialPort() 
+{
+ Serial.begin(9600);
+ Serial.println("**** Serial Port Enabled ****");
+ Serial.println("Avaliable Serial Commands");
+ Serial.println("time:hh.mm.ss");
+ Serial.println("date:mm/dd/yy");
+ Serial.println("PROM:<read><save><clear><print>");
+ Serial.println("vars:<name>:<data> or <help>");
+}
+
+
 //**************************************
 //**************************************
 //*** Timer Interrupt handling *********
@@ -866,14 +990,6 @@ void setupTimerInterrupt()
 /* These procedures are misc setup calls
  *  
  */
-
-//*** Setup Serial Port
-void setupSerialPort()
-{
-  Serial.begin(9600);
-  Serial.println(" ");
-  Serial.println("*** Run Setup ***");
-}
 
 //***  Setup SoftwareVersion
 void setupINIT()
@@ -949,6 +1065,9 @@ void loop()
   
   if (event.State == eventDisplay) {updateDisplay(); }
 
+  //Check Serial Port for command
+  if(readSerialPort() == true) {serialPortCommands(serialPortMessage);}
+  
   // check for Keypad Stroke
   char key = GetKeyStroke();
   if(key != NO_KEY)
